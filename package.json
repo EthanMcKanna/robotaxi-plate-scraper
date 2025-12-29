@@ -1,0 +1,27 @@
+{
+  "name": "robotaxi-plate-scraper",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "scrape:once": "tsx scripts/run-once.ts",
+    "setup": "tsx scripts/setup.ts",
+    "seed:bot": "tsx scripts/seed-bot-user.ts",
+    "build": "tsc",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.49.1",
+    "dotenv": "^16.4.7",
+    "p-limit": "^6.2.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
