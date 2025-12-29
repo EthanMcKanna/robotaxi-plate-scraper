@@ -1,70 +1,51 @@
 // Target subreddits for robotaxi content
 export const TARGET_SUBREDDITS = [
-  // Robotaxi-specific
+  // Company-specific
   'Waymo',
-  'robotaxi',
-  'SelfDrivingCars',
-
-  // Tesla communities
   'TeslaMotors',
   'TeslaLounge',
-  'electricvehicles',
+  'TeslaFSD',
 
-  // Operating area cities (high priority)
-  'sanfrancisco',
-  'bayarea',
-  'Phoenix',
+  // Service cities
   'Austin',
+  'Atlanta',
   'LosAngeles',
+  'Phoenix',
 
-  // Secondary cities
+  // Bay Area cities (general subreddits)
+  'bayarea',
+  'sanfrancisco',
+  'Oakland',
   'SanJose',
+  'berkeley',
+  'DalyCity',
+  'SanMateo',
+  'RedwoodCity',
+  'Fremont',
+  'Sunnyvale',
   'MountainView',
   'PaloAlto',
-  'SantaMonica',
-  'Scottsdale',
-
-  // Expansion cities
-  'Atlanta',
-  'Denver',
-  'Seattle',
-  'Miami',
-  'Dallas',
-
-  // Tech subreddits
-  'technology',
-  'Futurology',
-  'cars',
-  'Autos',
-
-  // Competitor awareness
-  'Cruise',
-  'Zoox',
-  'Aurora',
+  'MenloPark',
+  'LosAltos',
 ] as const
 
 // Robotaxi-specific subreddits (skip keyword filtering for these)
 export const ROBOTAXI_SUBREDDITS = new Set([
   'Waymo',
-  'robotaxi',
-  'SelfDrivingCars',
-  'Cruise',
-  'Zoox',
-  'Aurora',
+  'TeslaFSD',
 ])
 
 // Keywords that strongly indicate robotaxi content
 export const ROBOTAXI_KEYWORDS = [
-  'robotaxi',
   'waymo',
-  'cybercab',
-  'autonomous taxi',
-  'self driving',
-  'driverless',
-  'fsd',
-  'robo taxi',
-  'autonomous vehicle',
-  'self-driving',
   'waymo one',
-  'driverless taxi',
+  'tesla',
+  'tesla robotaxi',
+  'tesla robo taxi',
+  'cybercab',
+  'fsd',
+  'full self driving',
+  'full self-driving',
+  'autopilot',
+  'tesla autonomy',
 ] as const
