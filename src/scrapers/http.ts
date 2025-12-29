@@ -1,5 +1,6 @@
+import pLimit from 'p-limit'
 import { logger } from '../utils/logger.js'
-import { delay, randomDelay } from '../utils/delay.js'
+import { delay } from '../utils/delay.js'
 
 // User agents to rotate for web scraping
 const USER_AGENTS = [
@@ -21,13 +22,48 @@ export interface FetchOptions {
   headers?: Record<string, string>
   retries?: number
   retryDelay?: number
+  timeoutMs?: number
+  maxConcurrentPerHost?: number
+}
+
+const DEFAULT_TIMEOUT_MS = 15000
+const DEFAULT_MAX_CONCURRENT_PER_HOST = 4
+const hostLimits = new Map<string, ReturnType<typeof pLimit>>()
+
+function getHostLimit(hostname: string, maxConcurrent: number): ReturnType<typeof pLimit> {
+  const key = `${hostname}:${maxConcurrent}`
+  const existing = hostLimits.get(key)
+  if (existing) {
+    return existing
+  }
+  const limiter = pLimit(maxConcurrent)
+  hostLimits.set(key, limiter)
+  return limiter
+}
+
+function parseRetryAfter(retryAfter: string | null): number | null {
+  if (!retryAfter) return null
+  const seconds = Number(retryAfter)
+  if (!Number.isNaN(seconds) && seconds >= 0) {
+    return seconds * 1000
+  }
+  const parsedDate = Date.parse(retryAfter)
+  if (!Number.isNaN(parsedDate)) {
+    return Math.max(0, parsedDate - Date.now())
+  }
+  return null
 }
 
 export async function fetchWithRetry(
   url: string,
   options: FetchOptions = {}
 ): Promise<Response> {
-  const { retries = 3, retryDelay = 2000 } = options
+  const {
+    retries = 3,
+    retryDelay = 2000,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    maxConcurrentPerHost = DEFAULT_MAX_CONCURRENT_PER_HOST,
+  } = options
 
   const headers: Record<string, string> = {
     'User-Agent': getRandomUserAgent(),
@@ -37,35 +73,52 @@ export async function fetchWithRetry(
     ...options.headers,
   }
 
-  let lastError: Error | null = null
+  const hostname = new URL(url).hostname
+  const limiter = getHostLimit(hostname, maxConcurrentPerHost)
 
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch(url, { headers })
+  return limiter(async () => {
+    let lastError: Error | null = null
 
-      if (response.status === 429) {
-        // Rate limited - wait longer
-        logger.warn({ url, attempt }, 'Rate limited, waiting...')
-        await delay(retryDelay * attempt * 2)
-        continue
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+      try {
+        const response = await fetch(url, { headers, signal: controller.signal })
+        clearTimeout(timeoutId)
+
+        if (response.status === 429) {
+          // Rate limited - respect Retry-After if provided
+          const retryAfterMs = parseRetryAfter(response.headers.get('Retry-After'))
+          const backoffMs = retryDelay * attempt * 2
+          const waitMs = retryAfterMs ? Math.max(retryAfterMs, backoffMs) : backoffMs
+          logger.warn({ url, attempt, waitMs }, 'Rate limited, waiting...')
+          await delay(waitMs)
+          continue
+        }
+
+        if (!response.ok && response.status >= 500) {
+          // Server error - retry
+          const retryAfterMs = parseRetryAfter(response.headers.get('Retry-After'))
+          const backoffMs = retryDelay * attempt
+          const waitMs = retryAfterMs ? Math.max(retryAfterMs, backoffMs) : backoffMs
+          logger.warn({ url, status: response.status, attempt, waitMs }, 'Server error, retrying...')
+          await delay(waitMs)
+          continue
+        }
+
+        return response
+      } catch (error) {
+        clearTimeout(timeoutId)
+        lastError = error as Error
+        const waitMs = retryDelay * attempt
+        logger.warn({ url, error: lastError.message, attempt, waitMs }, 'Fetch failed, retrying...')
+        await delay(waitMs)
       }
-
-      if (!response.ok && response.status >= 500) {
-        // Server error - retry
-        logger.warn({ url, status: response.status, attempt }, 'Server error, retrying...')
-        await delay(retryDelay * attempt)
-        continue
-      }
-
-      return response
-    } catch (error) {
-      lastError = error as Error
-      logger.warn({ url, error: lastError.message, attempt }, 'Fetch failed, retrying...')
-      await delay(retryDelay * attempt)
     }
-  }
 
-  throw lastError || new Error(`Failed to fetch ${url} after ${retries} attempts`)
+    throw lastError || new Error(`Failed to fetch ${url} after ${retries} attempts`)
+  })
 }
 
 export async function fetchJson<T>(url: string, options: FetchOptions = {}): Promise<T> {

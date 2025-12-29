@@ -10,6 +10,7 @@ import { isPostProcessed, markPostProcessed } from './database/tracking.js'
 import { plateExistsInFleet, pendingSubmissionExists, createSubmission } from './database/submissions.js'
 import { uploadScrapedImage } from './storage/uploader.js'
 import { delay } from './utils/delay.js'
+import type { VehicleProvider } from './utils/validation.js'
 
 const MIN_DETECTION_CONFIDENCE = 70
 const MIN_PLATE_CONFIDENCE = 60
@@ -40,6 +41,15 @@ async function processPost(post: ScrapedPost): Promise<void> {
     imageCount: post.imageUrls.length,
   }, 'Processing post')
 
+  let bestCandidate: {
+    imageUrl: string
+    plateNumber: string
+    provider: VehicleProvider
+    plateConfidence: number
+    detectionConfidence: number
+  } | null = null
+  let sawRobotaxi = false
+
   for (const imageUrl of post.imageUrls) {
     try {
       const detection = await detectRobotaxi(imageUrl)
@@ -54,6 +64,8 @@ async function processPost(post: ScrapedPost): Promise<void> {
         continue
       }
 
+      sawRobotaxi = true
+
       logger.info({
         imageUrl,
         provider: detection.provider,
@@ -64,13 +76,7 @@ async function processPost(post: ScrapedPost): Promise<void> {
 
       if (!plateResult.found || !plateResult.plateNumber) {
         logger.info({ imageUrl }, 'No plate found')
-        await markPostProcessed({
-          source: post.source,
-          sourceId: post.sourceId,
-          sourceUrl: post.sourceUrl,
-          result: 'no_plate',
-        })
-        return
+        continue
       }
 
       if (plateResult.confidence < MIN_PLATE_CONFIDENCE) {
@@ -78,88 +84,27 @@ async function processPost(post: ScrapedPost): Promise<void> {
           plate: plateResult.plateNumber,
           confidence: plateResult.confidence,
         }, 'Plate confidence too low')
-        await markPostProcessed({
-          source: post.source,
-          sourceId: post.sourceId,
-          sourceUrl: post.sourceUrl,
-          result: 'no_plate',
-        })
-        return
+        continue
       }
 
-      const plateNumber = plateResult.plateNumber
-
-      if (await plateExistsInFleet(plateNumber, detection.provider)) {
-        logger.info({ plate: plateNumber }, 'Plate already in fleet')
-        await markPostProcessed({
-          source: post.source,
-          sourceId: post.sourceId,
-          sourceUrl: post.sourceUrl,
-          result: 'duplicate',
-        })
-        return
-      }
-
-      if (await pendingSubmissionExists(plateNumber, detection.provider)) {
-        logger.info({ plate: plateNumber }, 'Pending submission already exists')
-        await markPostProcessed({
-          source: post.source,
-          sourceId: post.sourceId,
-          sourceUrl: post.sourceUrl,
-          result: 'duplicate',
-        })
-        return
-      }
-
-      const uploadResult = await uploadScrapedImage(imageUrl, plateNumber)
-
-      if (!uploadResult.success || !uploadResult.publicUrl) {
-        logger.error({ imageUrl, error: uploadResult.error }, 'Failed to upload image')
-        await markPostProcessed({
-          source: post.source,
-          sourceId: post.sourceId,
-          sourceUrl: post.sourceUrl,
-          result: 'error',
-          errorMessage: `Upload failed: ${uploadResult.error}`,
-        })
-        return
-      }
-
-      const submissionResult = await createSubmission({
-        plateNumber,
+      const candidate = {
+        imageUrl,
+        plateNumber: plateResult.plateNumber,
         provider: detection.provider,
-        imageUrls: [uploadResult.publicUrl],
-        sourceUrl: post.sourceUrl,
-        source: post.source,
-      })
-
-      if (!submissionResult.success) {
-        logger.error({ error: submissionResult.error }, 'Failed to create submission')
-        await markPostProcessed({
-          source: post.source,
-          sourceId: post.sourceId,
-          sourceUrl: post.sourceUrl,
-          result: 'error',
-          errorMessage: submissionResult.error,
-        })
-        return
+        plateConfidence: plateResult.confidence,
+        detectionConfidence: detection.confidence,
       }
 
-      logger.info({
-        plate: plateNumber,
-        provider: detection.provider,
-        submissionId: submissionResult.submissionId,
-      }, 'Created submission successfully')
-
-      await markPostProcessed({
-        source: post.source,
-        sourceId: post.sourceId,
-        sourceUrl: post.sourceUrl,
-        result: 'submitted',
-        submissionId: submissionResult.submissionId,
-      })
-
-      return
+      if (
+        !bestCandidate ||
+        candidate.plateConfidence > bestCandidate.plateConfidence ||
+        (
+          candidate.plateConfidence === bestCandidate.plateConfidence &&
+          candidate.detectionConfidence > bestCandidate.detectionConfidence
+        )
+      ) {
+        bestCandidate = candidate
+      }
     } catch (error) {
       logger.error({ error, imageUrl }, 'Error processing image')
     }
@@ -167,12 +112,99 @@ async function processPost(post: ScrapedPost): Promise<void> {
     await delay(1000)
   }
 
+  if (!sawRobotaxi) {
+    await markPostProcessed({
+      source: post.source,
+      sourceId: post.sourceId,
+      sourceUrl: post.sourceUrl,
+      result: 'not_robotaxi',
+    })
+    return
+  }
+
+  if (!bestCandidate) {
+    await markPostProcessed({
+      source: post.source,
+      sourceId: post.sourceId,
+      sourceUrl: post.sourceUrl,
+      result: 'no_plate',
+    })
+    return
+  }
+
+  const plateNumber = bestCandidate.plateNumber
+  const provider = bestCandidate.provider
+
+  if (await plateExistsInFleet(plateNumber, provider)) {
+    logger.info({ plate: plateNumber }, 'Plate already in fleet')
+    await markPostProcessed({
+      source: post.source,
+      sourceId: post.sourceId,
+      sourceUrl: post.sourceUrl,
+      result: 'duplicate',
+    })
+    return
+  }
+
+  if (await pendingSubmissionExists(plateNumber, provider)) {
+    logger.info({ plate: plateNumber }, 'Pending submission already exists')
+    await markPostProcessed({
+      source: post.source,
+      sourceId: post.sourceId,
+      sourceUrl: post.sourceUrl,
+      result: 'duplicate',
+    })
+    return
+  }
+
+  const uploadResult = await uploadScrapedImage(bestCandidate.imageUrl, plateNumber)
+
+  if (!uploadResult.success || !uploadResult.publicUrl) {
+    logger.error({ imageUrl: bestCandidate.imageUrl, error: uploadResult.error }, 'Failed to upload image')
+    await markPostProcessed({
+      source: post.source,
+      sourceId: post.sourceId,
+      sourceUrl: post.sourceUrl,
+      result: 'error',
+      errorMessage: `Upload failed: ${uploadResult.error}`,
+    })
+    return
+  }
+
+  const submissionResult = await createSubmission({
+    plateNumber,
+    provider,
+    imageUrls: [uploadResult.publicUrl],
+    sourceUrl: post.sourceUrl,
+    source: post.source,
+  })
+
+  if (!submissionResult.success) {
+    logger.error({ error: submissionResult.error }, 'Failed to create submission')
+    await markPostProcessed({
+      source: post.source,
+      sourceId: post.sourceId,
+      sourceUrl: post.sourceUrl,
+      result: 'error',
+      errorMessage: submissionResult.error,
+    })
+    return
+  }
+
+  logger.info({
+    plate: plateNumber,
+    provider,
+    submissionId: submissionResult.submissionId,
+  }, 'Created submission successfully')
+
   await markPostProcessed({
     source: post.source,
     sourceId: post.sourceId,
     sourceUrl: post.sourceUrl,
-    result: 'not_robotaxi',
+    result: 'submitted',
+    submissionId: submissionResult.submissionId,
   })
+  return
 }
 
 async function runScrapeJob(): Promise<void> {
