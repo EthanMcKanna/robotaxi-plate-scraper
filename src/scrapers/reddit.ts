@@ -1,154 +1,263 @@
-import { fetchJson } from './http.js'
+import { XMLParser } from 'fast-xml-parser'
+import { fetchWithRetry } from './http.js'
+import { config } from '../config/index.js'
 import { logger } from '../utils/logger.js'
 import { delay } from '../utils/delay.js'
 import { TARGET_SUBREDDITS, ROBOTAXI_KEYWORDS, ROBOTAXI_SUBREDDITS } from '../config/search-terms.js'
 import type { ScrapedPost, Scraper } from './types.js'
 
-const REDDIT_BASE_URLS = [
+const REDDIT_RSS_BASE_URLS = [
   'https://www.reddit.com',
   'https://old.reddit.com',
 ]
+const REDDIT_RSS_ACCEPT_HEADER = 'application/rss+xml, application/xml;q=0.9, */*;q=0.8'
 
-// Reddit JSON API response types
-interface RedditListingData {
-  after: string | null
-  children: RedditPostWrapper[]
+const RSS_PARSER = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '',
+  textNodeName: '#text',
+})
+
+interface RedditRssItem {
+  title?: string | { '#text'?: string }
+  link?: string | { '#text'?: string; href?: string; rel?: string } | Array<{ '#text'?: string; href?: string; rel?: string }>
+  guid?: string | { '#text'?: string }
+  pubDate?: string | { '#text'?: string }
+  published?: string | { '#text'?: string }
+  'dc:creator'?: string | { '#text'?: string }
+  author?: string | { '#text'?: string } | { name?: string }
+  description?: string | { '#text'?: string }
+  'content:encoded'?: string | { '#text'?: string }
+  content?: string | { '#text'?: string }
+  updated?: string | { '#text'?: string }
 }
 
-interface RedditListingResponse {
-  kind: string
-  data: RedditListingData
+interface RedditRssChannel {
+  item?: RedditRssItem | RedditRssItem[]
 }
 
-interface RedditPostWrapper {
-  kind: string
-  data: RedditPost
-}
-
-interface RedditPost {
-  id: string
-  name: string
-  title: string
-  selftext: string
-  author: string
-  subreddit: string
-  permalink: string
-  url: string
-  created_utc: number
-  is_video: boolean
-  is_gallery?: boolean
-  post_hint?: string
-  preview?: {
-    images: Array<{
-      source: { url: string; width: number; height: number }
-      resolutions: Array<{ url: string; width: number; height: number }>
-    }>
+interface RedditRssResponse {
+  rss?: {
+    channel?: RedditRssChannel
   }
-  gallery_data?: {
-    items: Array<{ media_id: string; id: number }>
+  feed?: {
+    entry?: RedditRssItem | RedditRssItem[]
   }
-  media_metadata?: Record<string, {
-    status: string
-    e: string
-    m: string
-    s: { u: string; x: number; y: number }
-  }>
 }
 
 // Decode HTML entities in Reddit URLs
-function decodeRedditUrl(url: string): string {
-  return url.replace(/&amp;/g, '&')
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([\da-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
 }
 
-// Extract image URLs from a Reddit post
-function extractImagesFromPost(post: RedditPost): string[] {
-  const images: string[] = []
+function getTextValue(value: unknown): string {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'object' && value && '#text' in value) {
+    const text = (value as { '#text'?: string })['#text']
+    return typeof text === 'string' ? text : ''
+  }
+  return ''
+}
 
-  // Handle gallery posts
-  if (post.is_gallery && post.gallery_data && post.media_metadata) {
-    for (const item of post.gallery_data.items) {
-      const media = post.media_metadata[item.media_id]
-      if (media && media.s && media.s.u) {
-        images.push(decodeRedditUrl(media.s.u))
-      }
-    }
-    return images
+function getLinkValue(value: unknown): string {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    const candidate = value.find(entry => typeof entry === 'object' && entry && (entry as { rel?: string }).rel === 'alternate') || value[0]
+    return getLinkValue(candidate)
+  }
+  if (typeof value === 'object') {
+    const entry = value as { href?: string; '#text'?: string }
+    if (typeof entry.href === 'string') return entry.href
+    if (typeof entry['#text'] === 'string') return entry['#text']
+  }
+  return ''
+}
+
+function getAuthorName(item: RedditRssItem): string {
+  const dcCreator = getTextValue(item['dc:creator'])
+  if (dcCreator) return dcCreator
+  const author = item.author
+  if (!author) return ''
+  if (typeof author === 'string') return author
+  if (typeof author === 'object') {
+    const name = (author as { name?: string })?.name
+    if (typeof name === 'string') return name
+    return getTextValue(author)
+  }
+  return ''
+}
+
+function stripHtml(html: string): string {
+  return decodeHtmlEntities(html.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim()
+}
+
+function extractImageUrlsFromHtml(html: string): string[] {
+  const urls = new Set<string>()
+  if (!html) return []
+
+  const decoded = decodeHtmlEntities(html)
+  const imgRegex = /<img[^>]+src=["']([^"']+)["']/gi
+  const linkRegex = /href=["']([^"']+)["']/gi
+
+  let match: RegExpExecArray | null
+  while ((match = imgRegex.exec(decoded)) !== null) {
+    urls.add(match[1])
   }
 
-  // Handle preview images
-  if (post.preview?.images) {
-    for (const image of post.preview.images) {
-      if (image.source?.url) {
-        images.push(decodeRedditUrl(image.source.url))
-      }
-    }
-    return images
-  }
-
-  // Handle direct image links
-  if (post.url) {
-    const url = post.url.toLowerCase()
+  while ((match = linkRegex.exec(decoded)) !== null) {
+    const url = match[1]
+    const lower = url.toLowerCase()
     if (
-      url.endsWith('.jpg') ||
-      url.endsWith('.jpeg') ||
-      url.endsWith('.png') ||
-      url.endsWith('.webp') ||
-      url.includes('i.redd.it') ||
-      url.includes('i.imgur.com')
+      lower.includes('i.redd.it') ||
+      lower.includes('i.imgur.com') ||
+      lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.png') ||
+      lower.endsWith('.webp')
     ) {
-      images.push(post.url)
+      urls.add(url)
     }
   }
 
-  return images
+  return Array.from(urls)
 }
 
-// Check if post title/text contains robotaxi keywords
-function containsRobotaxiKeywords(post: RedditPost): boolean {
-  const text = `${post.title} ${post.selftext}`.toLowerCase()
-  return ROBOTAXI_KEYWORDS.some(keyword => text.includes(keyword.toLowerCase()))
+function extractImageUrlsFromItem(item: RedditRssItem): string[] {
+  const content = getTextValue(item['content:encoded']) || getTextValue(item.content) || getTextValue(item.description)
+  const urls = new Set(extractImageUrlsFromHtml(content))
+  const link = getLinkValue(item.link)
+  if (link) {
+    const lower = link.toLowerCase()
+    if (
+      lower.includes('i.redd.it') ||
+      lower.includes('i.imgur.com') ||
+      lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.png') ||
+      lower.endsWith('.webp')
+    ) {
+      urls.add(link)
+    }
+  }
+
+  return Array.from(urls)
 }
 
-// Convert Reddit post to ScrapedPost
-function toScrapedPost(post: RedditPost): ScrapedPost | null {
-  const imageUrls = extractImagesFromPost(post)
+function containsRobotaxiKeywords(text: string): boolean {
+  const normalized = text.toLowerCase()
+  return ROBOTAXI_KEYWORDS.some(keyword => normalized.includes(keyword.toLowerCase()))
+}
 
-  // Skip posts without images
-  if (imageUrls.length === 0) {
+function extractSubreddit(link: string): string {
+  try {
+    const url = new URL(link)
+    const parts = url.pathname.split('/').filter(Boolean)
+    const subredditIndex = parts.findIndex(part => part.toLowerCase() === 'r')
+    if (subredditIndex >= 0 && parts[subredditIndex + 1]) {
+      return parts[subredditIndex + 1]
+    }
+  } catch {
+    // ignore invalid URLs
+  }
+  return 'reddit'
+}
+
+function extractPostId(guid: string, link: string): string {
+  const guidText = guid.trim()
+  if (guidText.startsWith('t3_')) {
+    return guidText.slice(3)
+  }
+  const match = /comments\/([a-z0-9]+)/i.exec(link)
+  if (match) {
+    return match[1]
+  }
+  return guidText || link
+}
+
+function toScrapedPost(item: RedditRssItem): ScrapedPost | null {
+  const link = getLinkValue(item.link)
+  const title = getTextValue(item.title)
+  const contentHtml = getTextValue(item['content:encoded']) || getTextValue(item.content) || getTextValue(item.description)
+  const text = stripHtml(contentHtml)
+  const imageUrls = extractImageUrlsFromItem(item)
+
+  if (!link || imageUrls.length === 0) {
     return null
   }
 
-  // Skip videos
-  if (post.is_video) {
-    return null
-  }
+  const pubDateText = getTextValue(item.pubDate) || getTextValue(item.published) || getTextValue(item.updated)
+  const createdAt = pubDateText ? new Date(pubDateText) : new Date()
+  const guid = getTextValue(item.guid)
 
   return {
     source: 'reddit',
-    sourceId: post.id,
-    sourceUrl: `https://reddit.com${post.permalink}`,
-    authorUsername: post.author,
-    title: post.title,
-    text: post.selftext,
+    sourceId: extractPostId(guid || link, link),
+    sourceUrl: link,
+    authorUsername: getAuthorName(item) || 'unknown',
+    title,
+    text,
     imageUrls,
-    createdAt: new Date(post.created_utc * 1000),
-    subreddit: post.subreddit,
+    createdAt,
+    subreddit: extractSubreddit(link),
   }
 }
 
-async function fetchRedditJson<T>(path: string): Promise<T> {
-  let lastError: Error | null = null
+function getRedditUserAgent(): string {
+  return config.redditUserAgent || 'robotaxi-plate-scraper/0.1.0 (github.com/EthanMcKanna/robotaxi-plate-scraper)'
+}
 
-  for (const baseUrl of REDDIT_BASE_URLS) {
+function normalizeRssItems(parsed: RedditRssResponse): RedditRssItem[] {
+  const channelItems = parsed?.rss?.channel?.item
+  if (channelItems) {
+    return Array.isArray(channelItems) ? channelItems : [channelItems]
+  }
+
+  const feedItems = parsed?.feed?.entry
+  if (feedItems) {
+    return Array.isArray(feedItems) ? feedItems : [feedItems]
+  }
+
+  return []
+}
+
+async function fetchRedditRss(path: string): Promise<RedditRssItem[]> {
+  let lastError: Error | null = null
+  const userAgent = getRedditUserAgent()
+
+  for (const baseUrl of REDDIT_RSS_BASE_URLS) {
     try {
-      return await fetchJson<T>(`${baseUrl}${path}`)
+      const response = await fetchWithRetry(`${baseUrl}${path}`, {
+        headers: {
+          'User-Agent': userAgent,
+          'Accept': REDDIT_RSS_ACCEPT_HEADER,
+        },
+        retries: 2,
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const xml = await response.text()
+      const parsed = RSS_PARSER.parse(xml) as RedditRssResponse
+      return normalizeRssItems(parsed)
     } catch (error) {
       lastError = error as Error
       logger.warn({ err: error, baseUrl, path }, 'Reddit request failed, trying fallback')
     }
   }
 
-  throw lastError || new Error(`Failed to fetch Reddit JSON for ${path}`)
+  throw lastError || new Error(`Failed to fetch Reddit RSS for ${path}`)
 }
 
 export class RedditScraper implements Scraper {
@@ -196,24 +305,32 @@ export class RedditScraper implements Scraper {
 
   private async scrapeSubreddit(subreddit: string, sinceTimestamp: number): Promise<ScrapedPost[]> {
     const posts: ScrapedPost[] = []
-    const path = `/r/${subreddit}/new.json?limit=100&raw_json=1`
-    const response = await fetchRedditJson<RedditListingResponse>(path)
+    const path = `/r/${subreddit}/new.rss?limit=100`
+    const items = await fetchRedditRss(path)
 
-    for (const child of response.data.children) {
-      const post = child.data
+    for (const item of items) {
+      const link = getLinkValue(item.link)
+      const contentHtml = getTextValue(item['content:encoded']) || getTextValue(item.content) || getTextValue(item.description)
+      const text = stripHtml(`${getTextValue(item.title)} ${contentHtml}`)
+      const pubDateText = getTextValue(item.pubDate) || getTextValue(item.published) || getTextValue(item.updated)
+      const createdAt = pubDateText ? new Date(pubDateText) : null
+
+      if (!createdAt) {
+        continue
+      }
 
       // Skip posts older than since
-      if (post.created_utc < sinceTimestamp) {
+      if (createdAt.getTime() / 1000 < sinceTimestamp) {
         continue
       }
 
       // Only include posts with robotaxi keywords in target subreddits that aren't robotaxi-specific
       const isRobotaxiSubreddit = ROBOTAXI_SUBREDDITS.has(subreddit)
-      if (!isRobotaxiSubreddit && !containsRobotaxiKeywords(post)) {
+      if (!isRobotaxiSubreddit && !containsRobotaxiKeywords(text)) {
         continue
       }
 
-      const scrapedPost = toScrapedPost(post)
+      const scrapedPost = toScrapedPost(item)
       if (scrapedPost) {
         posts.push(scrapedPost)
       }
@@ -225,18 +342,23 @@ export class RedditScraper implements Scraper {
   private async searchReddit(query: string, sinceTimestamp: number): Promise<ScrapedPost[]> {
     const posts: ScrapedPost[] = []
     const encodedQuery = encodeURIComponent(query)
-    const path = `/search.json?q=${encodedQuery}&sort=new&limit=100&type=link&raw_json=1`
-    const response = await fetchRedditJson<RedditListingResponse>(path)
+    const path = `/search.rss?q=${encodedQuery}&sort=new&limit=100`
+    const items = await fetchRedditRss(path)
 
-    for (const child of response.data.children) {
-      const post = child.data
+    for (const item of items) {
+      const pubDateText = getTextValue(item.pubDate) || getTextValue(item.published) || getTextValue(item.updated)
+      const createdAt = pubDateText ? new Date(pubDateText) : null
 
-      // Skip posts older than since
-      if (post.created_utc < sinceTimestamp) {
+      if (!createdAt) {
         continue
       }
 
-      const scrapedPost = toScrapedPost(post)
+      // Skip posts older than since
+      if (createdAt.getTime() / 1000 < sinceTimestamp) {
+        continue
+      }
+
+      const scrapedPost = toScrapedPost(item)
       if (scrapedPost) {
         posts.push(scrapedPost)
       }
