@@ -4,6 +4,11 @@ import { delay } from '../utils/delay.js'
 import { TARGET_SUBREDDITS, ROBOTAXI_KEYWORDS, ROBOTAXI_SUBREDDITS } from '../config/search-terms.js'
 import type { ScrapedPost, Scraper } from './types.js'
 
+const REDDIT_BASE_URLS = [
+  'https://www.reddit.com',
+  'https://old.reddit.com',
+]
+
 // Reddit JSON API response types
 interface RedditListingData {
   after: string | null
@@ -131,6 +136,21 @@ function toScrapedPost(post: RedditPost): ScrapedPost | null {
   }
 }
 
+async function fetchRedditJson<T>(path: string): Promise<T> {
+  let lastError: Error | null = null
+
+  for (const baseUrl of REDDIT_BASE_URLS) {
+    try {
+      return await fetchJson<T>(`${baseUrl}${path}`)
+    } catch (error) {
+      lastError = error as Error
+      logger.warn({ err: error, baseUrl, path }, 'Reddit request failed, trying fallback')
+    }
+  }
+
+  throw lastError || new Error(`Failed to fetch Reddit JSON for ${path}`)
+}
+
 export class RedditScraper implements Scraper {
   name = 'reddit'
 
@@ -150,7 +170,7 @@ export class RedditScraper implements Scraper {
         // Delay between subreddits to avoid rate limiting
         await delay(2000)
       } catch (error) {
-        logger.error({ subreddit, error }, 'Failed to scrape subreddit')
+        logger.error({ subreddit, err: error }, 'Failed to scrape subreddit')
       }
     }
 
@@ -168,7 +188,7 @@ export class RedditScraper implements Scraper {
       }
       logger.info({ count: searchPosts.length }, 'Scraped Reddit search')
     } catch (error) {
-      logger.error({ error }, 'Failed to search Reddit')
+      logger.error({ err: error }, 'Failed to search Reddit')
     }
 
     return posts
@@ -176,9 +196,8 @@ export class RedditScraper implements Scraper {
 
   private async scrapeSubreddit(subreddit: string, sinceTimestamp: number): Promise<ScrapedPost[]> {
     const posts: ScrapedPost[] = []
-    const url = `https://old.reddit.com/r/${subreddit}/new.json?limit=100`
-
-    const response = await fetchJson<RedditListingResponse>(url)
+    const path = `/r/${subreddit}/new.json?limit=100&raw_json=1`
+    const response = await fetchRedditJson<RedditListingResponse>(path)
 
     for (const child of response.data.children) {
       const post = child.data
@@ -206,9 +225,8 @@ export class RedditScraper implements Scraper {
   private async searchReddit(query: string, sinceTimestamp: number): Promise<ScrapedPost[]> {
     const posts: ScrapedPost[] = []
     const encodedQuery = encodeURIComponent(query)
-    const url = `https://old.reddit.com/search.json?q=${encodedQuery}&sort=new&limit=100&type=link`
-
-    const response = await fetchJson<RedditListingResponse>(url)
+    const path = `/search.json?q=${encodedQuery}&sort=new&limit=100&type=link&raw_json=1`
+    const response = await fetchRedditJson<RedditListingResponse>(path)
 
     for (const child of response.data.children) {
       const post = child.data
