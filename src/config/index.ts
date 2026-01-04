@@ -22,6 +22,8 @@ export interface ScraperConfig {
 
   // Feature flags
   enableReddit: boolean
+  enableLLMReddit: boolean
+  enableLLMX: boolean
 
   // Concurrency
   maxConcurrentScrapers: number
@@ -59,6 +61,8 @@ function loadConfigFromEnv(): ScraperConfig {
 
     // Feature flags
     enableReddit: getEnvBool('ENABLE_REDDIT', true),
+    enableLLMReddit: getEnvBool('ENABLE_LLM_REDDIT', false),
+    enableLLMX: getEnvBool('ENABLE_LLM_X', false),
 
     // Concurrency
     maxConcurrentScrapers: getEnvInt('MAX_CONCURRENT_SCRAPERS', 3),

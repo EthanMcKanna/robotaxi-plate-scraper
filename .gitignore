@@ -1,4 +1,5 @@
 node_modules/
+src/scrapers/python/__pycache__/
 dist/
 .env
 .env.*

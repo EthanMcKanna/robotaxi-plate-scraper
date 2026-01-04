@@ -3,6 +3,8 @@ import { ensureConfigInteractive } from './config/interactive-setup.js'
 import { logger } from './utils/logger.js'
 import { scraperRegistry } from './scrapers/registry.js'
 import { RedditScraper } from './scrapers/reddit.js'
+import { LLMRedditScraper } from './scrapers/llm-reddit.js'
+import { LLMXScraper } from './scrapers/llm-x.js'
 import type { ScrapedPost } from './scrapers/types.js'
 import { detectRobotaxi } from './vision/detector.js'
 import { extractPlate } from './vision/plate-extractor.js'
@@ -21,6 +23,16 @@ function registerScrapers(): void {
   scraperRegistry.register(new RedditScraper(), {
     enabled: config.enableReddit,
     priority: 10,
+  })
+
+  scraperRegistry.register(new LLMRedditScraper(), {
+    enabled: config.enableLLMReddit,
+    priority: 20,
+  })
+
+  scraperRegistry.register(new LLMXScraper(), {
+    enabled: config.enableLLMX,
+    priority: 30,
   })
 
   const allHealth = scraperRegistry.getAllHealth()
