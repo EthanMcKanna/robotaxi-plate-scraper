@@ -212,21 +212,16 @@ class XPoller:
             return candidates
         
         for result in results:
-            # Apply heuristic filter
+            # Convert all search results to candidates - let LLM filter them
+            # (Keywords are still used in the Google search query to find relevant posts)
             title = result.get("title", "")
-            snippet = result.get("snippet", "")
-            combined_text = f"{title} {snippet}"
-            
-            if not self._contains_keywords(combined_text):
-                continue
-            
-            logger.info(f"Found potential match: {title[:50]}...")
+            logger.info(f"Processing result: {title[:50]}...")
             
             # Convert to candidate
             candidate = self._search_result_to_candidate(result)
             candidates.append(candidate)
         
-        logger.info(f"Found {len(candidates)} potential candidates after filtering")
+        logger.info(f"Found {len(candidates)} results to analyze with LLM")
         return candidates
     
     def fetch_new_posts_since(self, last_check: datetime, limit: int = 10) -> List[SightingCandidate]:

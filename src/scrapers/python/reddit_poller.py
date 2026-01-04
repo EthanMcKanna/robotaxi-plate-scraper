@@ -228,21 +228,15 @@ class RedditPoller:
                 continue
             
             for post_data in posts:
-                # Apply heuristic filter
+                # Convert all posts to candidates - let LLM filter them
                 title = post_data.get('title', '')
-                selftext = post_data.get('selftext', '')
-                combined_text = f"{title} {selftext}"
-                
-                if not self._contains_keywords(combined_text):
-                    continue
-                
-                logger.info(f"Found potential match: {title[:50]}...")
+                logger.info(f"Processing post: {title[:50]}...")
                 
                 # Convert to candidate
                 candidate = self._post_to_candidate(post_data)
                 candidates.append(candidate)
         
-        logger.info(f"Found {len(candidates)} potential candidates after filtering")
+        logger.info(f"Found {len(candidates)} posts to analyze with LLM")
         return candidates
     
     def fetch_new_posts_since(self, last_check: datetime, limit: int = 100) -> List[SightingCandidate]:
@@ -275,15 +269,9 @@ class RedditPoller:
                 if submission_time <= last_check:
                     break  # Posts are sorted by newest first, so we can break
                 
-                # Apply heuristic filter
+                # Convert all posts to candidates - let LLM filter them
                 title = post_data.get('title', '')
-                selftext = post_data.get('selftext', '')
-                combined_text = f"{title} {selftext}"
-                
-                if not self._contains_keywords(combined_text):
-                    continue
-                
-                logger.info(f"Found new match: {title[:50]}...")
+                logger.info(f"Processing new post: {title[:50]}...")
                 
                 # Convert to candidate
                 candidate = self._post_to_candidate(post_data)
