@@ -28,7 +28,6 @@ class RedditPoller:
     
     def __init__(self):
         """Initialize the Reddit poller."""
-        self.keywords = [kw.lower() for kw in Config.KEYWORDS]
         # Set up Tor proxy if available (optional)
         self.proxies = None
         try:
@@ -47,13 +46,6 @@ class RedditPoller:
                 logger.info("RedditPoller initialized (using JSON endpoints, no Tor proxy)")
         except Exception as e:
             logger.info(f"RedditPoller initialized (using JSON endpoints, no Tor proxy: {e})")
-    
-    def _contains_keywords(self, text: str) -> bool:
-        """Check if text contains any of the target keywords."""
-        if not text:
-            return False
-        text_lower = text.lower()
-        return any(keyword in text_lower for keyword in self.keywords)
     
     def _extract_image_url(self, post_data: Dict[str, Any]) -> Optional[str]:
         """Extract image URL from a Reddit post JSON data."""

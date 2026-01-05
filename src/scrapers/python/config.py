@@ -19,20 +19,61 @@ class Config:
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
     GOOGLE_CSE_ID: str = os.getenv("GOOGLE_CSE_ID", "")
     
-    # Subreddits to monitor
-    SUBREDDITS: List[str] = ["TeslaLounge", "SelfDrivingCars", "teslamotors"]
+    # Subreddits to monitor (matches TARGET_SUBREDDITS from old scraper)
+    SUBREDDITS: List[str] = [
+        # Company-specific
+        "Waymo",
+        "TeslaMotors",
+        "TeslaLounge",
+        "TeslaFSD",
+        # Service cities
+        "Austin",
+        "Atlanta",
+        "LosAngeles",
+        "Phoenix",
+        # Bay Area cities (general subreddits)
+        "bayarea",
+        "sanfrancisco",
+        "Oakland",
+        "SanJose",
+        "berkeley",
+        "DalyCity",
+        "SanMateo",
+        "RedwoodCity",
+        "Fremont",
+        "Sunnyvale",
+        "MountainView",
+        "PaloAlto",
+        "MenloPark",
+        "LosAltos",
+    ]
     
-    # Keywords for filtering
+    # Robotaxi-specific subreddits (skip keyword filtering for these in old scraper)
+    # Note: Python scraper uses LLM filtering instead, but kept for reference
+    ROBOTAXI_SUBREDDITS: List[str] = ["Waymo", "TeslaFSD"]
+    
+    # Keywords for X/Twitter search query building (not used by Reddit poller)
     KEYWORDS: List[str] = [
-        "robotaxi",
+        "waymo",
+        "waymo one",
+        "tesla",
+        "tesla robotaxi",
+        "tesla robo taxi",
         "cybercab",
+        "fsd",
+        "full self driving",
+        "full self-driving",
+        "autopilot",
+        "tesla autonomy",
+        # Additional keywords for broader coverage
+        "robotaxi",
         "camouflage",
         "lidar",
         "test vehicle",
         "prototype",
         "manufacturer plate",
         "mfg plate",
-        "dst plate"
+        "dst plate",
     ]
     
     @classmethod

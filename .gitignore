@@ -12,3 +12,6 @@ yarn-error.log*
 *.tsbuildinfo
 .sessions/
 .DS_Store
+
+# Comparison output files
+comparison-output/

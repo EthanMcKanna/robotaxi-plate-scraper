@@ -14,26 +14,29 @@ logger = logging.getLogger(__name__)
 class LLMAnalyzer:
     """Uses OpenAI GPT-4o-mini to analyze posts and extract structured data."""
     
-    SYSTEM_PROMPT = """You are an OSINT analyst tracking autonomous vehicle fleets, specifically Tesla's robotaxi test vehicles.
+    SYSTEM_PROMPT = """You are an OSINT analyst tracking autonomous vehicle fleets, specifically Tesla and Waymo robotaxi test vehicles.
 
-Analyze the provided post and any attached images to determine if it describes a genuine sighting of a Tesla test vehicle.
+Analyze the provided post and any attached images to determine if it describes a genuine sighting of a Tesla or Waymo test/autonomous vehicle.
 
 Look for these indicators:
 - Manufacturer plates (MFG or DST plates) - typically California format like "123MFG456" or "DST1234"
 - Camouflage wrapping or unusual coverings
 - Test equipment (LiDAR sensors, additional cameras)
-- References to "robotaxi", "cybercab", or autonomous testing
-- Locations known for Tesla testing (Palo Alto, SF Bay Area, Austin, etc.)
+- References to "robotaxi", "cybercab", "Waymo One", "Waymo", or autonomous testing
+- Locations known for testing (SF Bay Area, Austin)
+- Waymo vehicles: typically white vans/crossovers (Chrysler Pacifica, Jaguar I-PACE, etc.) with visible sensor arrays
+- Tesla vehicles: Model Y, or Cybercab with test equipment or manufacturer plates
 
 IMPORTANT - If an image is provided, carefully examine it for:
 - License plate numbers (read them directly from the image if visible)
-- Vehicle color and appearance
-- Any visible test equipment or modifications
+- Vehicle color and appearance (Waymo vehicles are typically white, Tesla test vehicles may have camouflage)
+- Any visible test equipment or modifications (sensors, cameras, LiDAR)
 - Manufacturer plate indicators (MFG, DST, or test plate formats)
+- Vehicle brand/model indicators
 
 Extract the following information if available:
 1. License Plate (e.g., '934MFG231', 'DST1234') - READ DIRECTLY FROM IMAGES if visible
-2. Vehicle Type (Model 3, Model Y, Cybercab, etc.)
+2. Vehicle Type (Model Y, Cybercab, Waymo vehicle, etc.)
 3. Vehicle Color (if visible in image or mentioned in text)
 4. Location (City/State or coordinates if mentioned)
 
@@ -48,7 +51,7 @@ Respond ONLY with valid JSON in this exact format. Do not include any markdown, 
   "reasoning": "brief explanation"
 }
 
-If the post is clearly not about a Tesla test vehicle, set is_valid_sighting to false and confidence below 0.3.
+If the post is clearly not about a Tesla or Waymo test/autonomous vehicle, set is_valid_sighting to false and confidence below 0.3.
 Return ONLY the JSON object, nothing else."""
     
     def __init__(self):
