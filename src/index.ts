@@ -3,6 +3,8 @@ import { ensureConfigInteractive } from './config/interactive-setup.js'
 import { logger } from './utils/logger.js'
 import { scraperRegistry } from './scrapers/registry.js'
 import { RedditScraper } from './scrapers/reddit.js'
+import { LLMRedditScraper } from './scrapers/llm-reddit.js'
+import { LLMXScraper } from './scrapers/llm-x.js'
 import type { ScrapedPost } from './scrapers/types.js'
 import { detectRobotaxi } from './vision/detector.js'
 import { extractPlate } from './vision/plate-extractor.js'
@@ -21,6 +23,16 @@ function registerScrapers(): void {
   scraperRegistry.register(new RedditScraper(), {
     enabled: config.enableReddit,
     priority: 10,
+  })
+
+  scraperRegistry.register(new LLMRedditScraper(), {
+    enabled: config.enableLLMReddit,
+    priority: 20,
+  })
+
+  scraperRegistry.register(new LLMXScraper(), {
+    enabled: config.enableLLMX,
+    priority: 30,
   })
 
   const allHealth = scraperRegistry.getAllHealth()
@@ -213,9 +225,24 @@ async function runScrapeJob(): Promise<void> {
 
   logger.info({ since: since.toISOString() }, 'Starting scrape job')
 
-  const allPosts = await scraperRegistry.runAll(since, config.maxConcurrentScrapers)
-
-  logger.info({ totalPosts: allPosts.length }, 'Total posts collected')
+  let allPosts: ScrapedPost[]
+  try {
+    allPosts = await scraperRegistry.runAll(since, config.maxConcurrentScrapers)
+    logger.info({ totalPosts: allPosts.length }, 'Total posts collected')
+  } catch (error) {
+    const errorDetails = error instanceof Error
+      ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+        }
+      : {
+          error: String(error),
+          type: typeof error,
+        }
+    logger.error(errorDetails, 'Failed to run scrapers')
+    throw error
+  }
 
   let processed = 0
   let skipped = 0
@@ -273,6 +300,17 @@ async function main(): Promise<void> {
 }
 
 main().catch(error => {
-  logger.error({ error }, 'Fatal error')
+  const errorDetails = error instanceof Error
+    ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      }
+    : {
+        error: String(error),
+        type: typeof error,
+      }
+  logger.error(errorDetails, 'Fatal error')
+  console.error('Fatal error:', error)
   process.exit(1)
 })

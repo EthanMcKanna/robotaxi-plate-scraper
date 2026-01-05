@@ -141,6 +141,50 @@ export async function ensureConfigInteractive(options: EnsureConfigOptions = {})
     const existingRedditEnabled = (values.ENABLE_REDDIT ?? '').toLowerCase() === 'true'
     const enableReddit = await askYesNo(rl, 'Enable Reddit scraper', existingRedditEnabled || config.enableReddit)
     values.ENABLE_REDDIT = enableReddit ? 'true' : 'false'
+    
+    const existingLLMRedditEnabled = (values.ENABLE_LLM_REDDIT ?? '').toLowerCase() === 'true'
+    const enableLLMReddit = await askYesNo(rl, 'Enable LLM-enhanced Reddit scraper (requires OPENAI_API_KEY)', existingLLMRedditEnabled || config.enableLLMReddit)
+    values.ENABLE_LLM_REDDIT = enableLLMReddit ? 'true' : 'false'
+    
+    if (enableLLMReddit && !values.OPENAI_API_KEY) {
+      values.OPENAI_API_KEY = await askValue(
+        rl,
+        'OPENAI_API_KEY (required for LLM scrapers)',
+        values.OPENAI_API_KEY || '',
+        true
+      )
+    }
+    
+    const existingLLMXEnabled = (values.ENABLE_LLM_X ?? '').toLowerCase() === 'true'
+    const enableLLMX = await askYesNo(rl, 'Enable LLM-enhanced X/Twitter scraper (requires OPENAI_API_KEY and Google API keys)', existingLLMXEnabled || config.enableLLMX)
+    values.ENABLE_LLM_X = enableLLMX ? 'true' : 'false'
+    
+    if (enableLLMX) {
+      if (!values.OPENAI_API_KEY) {
+        values.OPENAI_API_KEY = await askValue(
+          rl,
+          'OPENAI_API_KEY (required for LLM scrapers)',
+          values.OPENAI_API_KEY || '',
+          true
+        )
+      }
+      if (!values.GOOGLE_API_KEY) {
+        values.GOOGLE_API_KEY = await askValue(
+          rl,
+          'GOOGLE_API_KEY (optional, for X/Twitter scraper)',
+          values.GOOGLE_API_KEY || '',
+          false
+        )
+      }
+      if (!values.GOOGLE_CSE_ID) {
+        values.GOOGLE_CSE_ID = await askValue(
+          rl,
+          'GOOGLE_CSE_ID (optional, for X/Twitter scraper)',
+          values.GOOGLE_CSE_ID || '',
+          false
+        )
+      }
+    }
   }
 
   rl.close()

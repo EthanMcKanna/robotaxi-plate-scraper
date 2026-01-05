@@ -1,4 +1,4 @@
-export type PostSource = 'reddit'
+export type PostSource = 'reddit' | 'x'
 
 export interface ScrapedPost {
   source: PostSource

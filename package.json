@@ -6,6 +6,7 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "scrape:once": "tsx scripts/run-once.ts",
+    "compare:scrapers": "tsx scripts/compare-scrapers.ts",
     "setup": "tsx scripts/setup.ts",
     "seed:bot": "tsx scripts/seed-bot-user.ts",
     "build": "tsc",
