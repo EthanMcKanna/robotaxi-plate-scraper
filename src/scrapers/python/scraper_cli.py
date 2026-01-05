@@ -11,12 +11,13 @@ import argparse
 from datetime import datetime, UTC
 from typing import List, Dict, Any
 
-# Add parent directory to path so we can import as package
+# Add project root to path so we can import as package
 script_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(script_dir)
 grandparent_dir = os.path.dirname(parent_dir)
-if grandparent_dir not in sys.path:
-    sys.path.insert(0, grandparent_dir)
+project_root = os.path.dirname(grandparent_dir)  # Go one more level to project root
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from src.scrapers.python.config import Config
 from src.scrapers.python.models import SightingCandidate

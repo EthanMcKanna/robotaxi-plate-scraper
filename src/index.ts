@@ -225,9 +225,24 @@ async function runScrapeJob(): Promise<void> {
 
   logger.info({ since: since.toISOString() }, 'Starting scrape job')
 
-  const allPosts = await scraperRegistry.runAll(since, config.maxConcurrentScrapers)
-
-  logger.info({ totalPosts: allPosts.length }, 'Total posts collected')
+  let allPosts: ScrapedPost[]
+  try {
+    allPosts = await scraperRegistry.runAll(since, config.maxConcurrentScrapers)
+    logger.info({ totalPosts: allPosts.length }, 'Total posts collected')
+  } catch (error) {
+    const errorDetails = error instanceof Error
+      ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+        }
+      : {
+          error: String(error),
+          type: typeof error,
+        }
+    logger.error(errorDetails, 'Failed to run scrapers')
+    throw error
+  }
 
   let processed = 0
   let skipped = 0
@@ -285,6 +300,17 @@ async function main(): Promise<void> {
 }
 
 main().catch(error => {
-  logger.error({ error }, 'Fatal error')
+  const errorDetails = error instanceof Error
+    ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      }
+    : {
+        error: String(error),
+        type: typeof error,
+      }
+  logger.error(errorDetails, 'Fatal error')
+  console.error('Fatal error:', error)
   process.exit(1)
 })

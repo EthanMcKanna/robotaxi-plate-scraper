@@ -19,6 +19,10 @@ class Config:
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
     GOOGLE_CSE_ID: str = os.getenv("GOOGLE_CSE_ID", "")
     
+    # Application Settings (for LangGraph workflow)
+    OUTPUT_FILE: str = os.getenv("OUTPUT_FILE", "candidates.json")
+    STATE_FILE: str = os.getenv("STATE_FILE", "state.json")
+    
     # Subreddits to monitor (matches TARGET_SUBREDDITS from old scraper)
     SUBREDDITS: List[str] = [
         # Company-specific
