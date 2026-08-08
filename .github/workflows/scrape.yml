@@ -33,6 +33,9 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           BOT_USER_ID: ${{ secrets.BOT_USER_ID }}
+          ROBOTAXI_INGEST_URL: ${{ secrets.ROBOTAXI_INGEST_URL }}
+          ROBOTAXI_INGEST_SECRET: ${{ secrets.ROBOTAXI_INGEST_SECRET }}
+          ROBOTAXI_INGEST_REQUIRED: 'true'
           LOG_LEVEL: info
           ENABLE_REDDIT: 'true'
           LOOKBACK_HOURS: '2'

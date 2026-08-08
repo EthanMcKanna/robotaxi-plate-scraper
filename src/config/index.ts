@@ -19,6 +19,7 @@ export interface ScraperConfig {
   scrapeIntervalMinutes: number
   lookbackHours: number
   logLevel: string
+  redditUserAgent: string
 
   // Feature flags
   enableReddit: boolean
@@ -56,6 +57,7 @@ function loadConfigFromEnv(): ScraperConfig {
     scrapeIntervalMinutes: getEnvInt('SCRAPE_INTERVAL_MINUTES', 15),
     lookbackHours: getEnvInt('LOOKBACK_HOURS', 2),
     logLevel: process.env.LOG_LEVEL || 'info',
+    redditUserAgent: process.env.REDDIT_USER_AGENT || '',
 
     // Feature flags
     enableReddit: getEnvBool('ENABLE_REDDIT', true),

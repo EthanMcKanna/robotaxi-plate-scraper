@@ -3,6 +3,7 @@ import { config } from '../config/index.js'
 import { logger } from '../utils/logger.js'
 import type { VehicleProvider } from '../utils/validation.js'
 import type { PostSource } from '../scrapers/types.js'
+import { sendSourceRecord } from '../cloudflare/ingestion.js'
 
 export interface SubmissionData {
   plateNumber: string
@@ -97,6 +98,32 @@ export async function createSubmission(data: SubmissionData): Promise<Submission
     plate: data.plateNumber,
     provider: data.provider,
   }, 'Created submission')
+
+  try {
+    const sent = await sendSourceRecord({
+      dataset: 'vehicleSubmissions',
+      id: submission.id,
+      record: {
+        plateNumber: data.plateNumber,
+        provider: data.provider,
+        color,
+        interiorColor,
+        serviceAreaId: null,
+        submitterNotes,
+        imageUrls: data.imageUrls,
+        status: 'pending',
+        submitterUserId: config.botUserId,
+        source: data.source,
+        sourceUrl: data.sourceUrl,
+      },
+    })
+    if (sent) logger.info({ submissionId: submission.id }, 'Queued submission in Robotaxi Worker')
+  } catch (cloudflareError) {
+    logger.error(
+      { errorType: cloudflareError instanceof Error ? cloudflareError.name : 'unknown' },
+      'Failed to queue submission in Robotaxi Worker'
+    )
+  }
 
   return { success: true, submissionId: submission.id }
 }
