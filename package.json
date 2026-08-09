@@ -15,10 +15,13 @@
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.49.1",
     "dotenv": "^16.4.7",
-    "fast-xml-parser": "^4.5.3",
+    "fast-xml-parser": "5.10.1",
     "p-limit": "^6.2.0",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0"
+  },
+  "overrides": {
+    "ws": "8.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
