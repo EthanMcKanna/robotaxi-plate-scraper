@@ -11,8 +11,6 @@ dotenv.config({ path: ENV_PATH })
 export interface ScraperConfig {
   // Required
   geminiApiKey: string
-  supabaseUrl: string
-  supabaseServiceKey: string
   botUserId: string
 
   // Scraper settings
@@ -49,8 +47,6 @@ function loadConfigFromEnv(): ScraperConfig {
   return {
     // Required
     geminiApiKey: getEnvVar('GEMINI_API_KEY'),
-    supabaseUrl: getEnvVar('SUPABASE_URL'),
-    supabaseServiceKey: getEnvVar('SUPABASE_SERVICE_ROLE_KEY'),
     botUserId: getEnvVar('BOT_USER_ID'),
 
     // Scraper settings
@@ -74,7 +70,7 @@ export function reloadConfig(): void {
 }
 
 export function getMissingRequiredConfig(): string[] {
-  const required = ['geminiApiKey', 'supabaseUrl', 'supabaseServiceKey', 'botUserId'] as const
+  const required = ['geminiApiKey', 'botUserId'] as const
   return required.filter(key => !config[key])
 }
 
