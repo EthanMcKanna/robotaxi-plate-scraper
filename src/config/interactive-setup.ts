@@ -118,21 +118,9 @@ export async function ensureConfigInteractive(options: EnsureConfigOptions = {})
     values.GEMINI_API_KEY || config.geminiApiKey,
     true
   )
-  values.SUPABASE_URL = await askValue(
-    rl,
-    'SUPABASE_URL',
-    values.SUPABASE_URL || config.supabaseUrl,
-    true
-  )
-  values.SUPABASE_SERVICE_ROLE_KEY = await askValue(
-    rl,
-    'SUPABASE_SERVICE_ROLE_KEY',
-    values.SUPABASE_SERVICE_ROLE_KEY || config.supabaseServiceKey,
-    true
-  )
   values.BOT_USER_ID = await askValue(
     rl,
-    'BOT_USER_ID (run npm run seed:bot if needed)',
+    'BOT_USER_ID',
     values.BOT_USER_ID || config.botUserId,
     true
   )

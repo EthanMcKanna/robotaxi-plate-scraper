@@ -1,8 +1,6 @@
-import { getSupabaseClient } from '../database/client.js'
 import { downloadImage } from '../scrapers/http.js'
 import { logger } from '../utils/logger.js'
-
-const STORAGE_BUCKET = 'vehicle-submissions'
+import { robotaxiWorkerBaseUrl, signedWorkerRequest } from '../cloudflare/ingestion.js'
 
 // Generate a unique filename for the uploaded image
 function generateFilename(plateNumber: string, originalUrl: string): string {
@@ -48,28 +46,17 @@ export async function uploadScrapedImage(
     const filename = generateFilename(plateNumber, imageUrl)
     const mimeType = getMimeType(filename)
 
-    // Upload to Supabase Storage
-    const supabase = getSupabaseClient()
-    const { data, error } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(filename, imageBuffer, {
-        contentType: mimeType,
-        upsert: false,
-      })
-
-    if (error) {
-      logger.error({ error, imageUrl, filename }, 'Failed to upload image')
-      return { success: false, error: error.message }
-    }
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from(STORAGE_BUCKET)
-      .getPublicUrl(data.path)
-
-    logger.info({ imageUrl, filename, publicUrl: urlData.publicUrl }, 'Uploaded image')
-
-    return { success: true, publicUrl: urlData.publicUrl }
+    const idempotencyKey = `robotaxi-plate-scraper:media:${plateNumber}:${filename}`.slice(0, 200)
+    const response = await signedWorkerRequest('/v1/media', {
+      method: 'PUT', body: imageBuffer, idempotencyKey, contentType: mimeType,
+    })
+    if (!response) return { success: false, error: 'Robotaxi Worker is not configured' }
+    if (!response.ok) return { success: false, error: `Robotaxi Worker rejected upload (${response.status})` }
+    const result = await response.json() as { url?: unknown }
+    if (typeof result.url !== 'string') return { success: false, error: 'Robotaxi Worker returned an invalid upload receipt' }
+    const publicUrl = new URL(result.url, robotaxiWorkerBaseUrl()).toString()
+    logger.info({ imageUrl, filename }, 'Uploaded image to private R2')
+    return { success: true, publicUrl }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     logger.error({ error, imageUrl }, 'Upload failed')

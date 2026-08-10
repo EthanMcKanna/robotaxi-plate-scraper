@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "robotaxi-plate-prod",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "containers": [
+    {
+      "class_name": "PlateCollector",
+      "image": "./Dockerfile",
+      "instance_type": "lite",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "PLATE_COLLECTOR", "class_name": "PlateCollector" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["PlateCollector"] }
+  ],
+  "triggers": { "crons": ["0 * * * *"] },
+  "vars": {
+    "ROBOTAXI_INGEST_URL": "https://api.robotaxitracker.com",
+    "LOOKBACK_HOURS": "2",
+    "MAX_CONCURRENT_SCRAPERS": "1",
+    "LOG_LEVEL": "info",
+    "ENABLE_REDDIT": "true"
+  },
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}
